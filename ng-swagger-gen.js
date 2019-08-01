@@ -19,7 +19,7 @@ function ngSwaggerGen(options) {
 
   var globalTunnel = require('global-tunnel-ng');
   globalTunnel.initialize();
-  
+
   $RefParser.bundle(options.swagger, { dereference: { circular: false } }).then(
     data => {
       doGenerate(data, options);
@@ -876,6 +876,14 @@ function resolveRef(swagger, ref) {
  * plus a property resultType, which is the type to the HTTP 2xx code.
  */
 function processResponses(swagger, def, path, models) {
+  var octetStream = false;
+  if (path.post && path.post.produces.indexOf("application/octet-stream") > -1) {
+    octetStream = true;
+  }
+  if (path.get && path.get.produces.indexOf("application/octet-stream") > -1) {
+    octetStream = true;
+  }
+
   var responses = def.responses || {};
   var operationResponses = {};
   operationResponses.returnHeaders = false;
@@ -884,9 +892,14 @@ function processResponses(swagger, def, path, models) {
     if (response.$ref) {
       response = resolveRef(swagger, response.$ref);
     }
+    if (!response.schema && octetStream) {
+      response.schema = {};
+      response.schema.type = 'file';
+    }
     if (!response.schema) {
       continue;
     }
+
     var type = propertyType(response.schema);
     if (/2\d\d/.test(code)) {
       // Successful response
@@ -1229,18 +1242,16 @@ function processServices(swagger, models, options) {
       var op = service.serviceOperations[i];
       for (var code in op.operationResponses) {
         var status = Number(code);
-        if (!isNaN(status)) {
-          var actualDeps = (status < 200 || status >= 300)
-            ? errorDependencies : dependencies;
-          var response = op.operationResponses[code];
-          if (response && response.type) {
-            var type = response.type;
-            if (type && type.allTypes) {
-              // This is an inline object. Append all types
-              type.allTypes.forEach(t => actualDeps.add(t));
-            } else {
-              actualDeps.add(type);
-            }
+        var actualDeps = (status < 200 || status >= 300)
+          ? errorDependencies : dependencies;
+        var response = op.operationResponses[code];
+        if (response.type) {
+          var type = response.type;
+          if (type && type.allTypes) {
+            // This is an inline object. Append all types
+            type.allTypes.forEach(t => actualDeps.add(t));
+          } else {
+            actualDeps.add(type);
           }
         }
       }
